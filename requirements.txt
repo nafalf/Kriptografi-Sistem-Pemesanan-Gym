@@ -1,0 +1,11 @@
+streamlit
+hashlib
+sqlite3
+base64
+io
+numpy
+arc4
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+from Crypto.Random import get_random_bytes
+from PIL import Image, ImageDraw, ImageFont
