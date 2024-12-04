@@ -10,6 +10,8 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import numpy as np 
 from arc4 import ARC4
+import zlib
+
 
 # Fungsi hashing untuk password
 def hash_password(password):
@@ -175,7 +177,7 @@ def get_encryption_keys():
     conn.close()
     return keys
 
-# Fungsi ROT13 manual
+# Fungsi ROT13
 def rot13_manual(text):
     result = []
     for char in text:
@@ -187,20 +189,17 @@ def rot13_manual(text):
             result.append(char)
     return ''.join(result)
 
-# Fungsi enkripsi: ROT13 manual diikuti dengan AES
+# Fungsi enkripsi: ROT13 + AES
 def encrypt_info_rot13_aes(data, aes_key):
-    # ROT13 manual
     rot13_encrypted = rot13_manual(data)
     
-    # Enkripsi AES
-    aes_key = aes_key.encode()[:16]  # Pastikan kunci 16 byte
-    iv = get_random_bytes(16)  # Inisialisasi vektor acak
+    aes_key = aes_key.encode()[:16]  
+    iv = get_random_bytes(16) 
     cipher = AES.new(aes_key, AES.MODE_CBC, iv)
     
-    # Padding data sesuai ukuran blok AES
     padded_data = pad(rot13_encrypted.encode(), AES.block_size)
     encrypted_data = iv + cipher.encrypt(padded_data)
-    return base64.b64encode(encrypted_data).decode()  # Kembalikan sebagai string base64
+    return base64.b64encode(encrypted_data).decode()  
 
 # Fungsi dekripsi: AES diikuti dengan ROT13
 def decrypt_info_rot13_aes(encrypted_data, aes_key):
@@ -269,7 +268,7 @@ def complete_booking(booking_id):
 def get_all_completed_bookings():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute("SELECT id, username, full_name, booking_time, booking_date, encrypted_info FROM completed_bookings")
+    c.execute("SELECT id, username, full_name, booking_time, booking_date, membership_type, encrypted_info FROM completed_bookings")
     completed_bookings = c.fetchall()
     conn.close()
     return completed_bookings
@@ -307,29 +306,24 @@ def update_db():
     conn.commit()
     conn.close()
 
-update_db()
 
 def update_completed_bookings_table():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
 
-    # Periksa apakah kolom 'full_name' ada di tabel 'completed_bookings'
+    # Periksa apakah kolom ada di tabel
     c.execute("PRAGMA table_info(completed_bookings)")
     columns = [column[1] for column in c.fetchall()]
     
-    # Tambahkan kolom 'full_name' jika belum ada
+    # Tambahkan kolom hanya jika belum ada
     if "full_name" not in columns:
         c.execute("ALTER TABLE completed_bookings ADD COLUMN full_name TEXT")
-
-    # Tambahkan kolom 'membership_type' jika belum ada
     if "membership_type" not in columns:
         c.execute("ALTER TABLE completed_bookings ADD COLUMN membership_type TEXT")
 
     conn.commit()
     conn.close()
 
-# Jalankan fungsi update
-update_completed_bookings_table()
 
 def reset_completed_bookings():
     """
@@ -436,6 +430,14 @@ def display_bookings(bookings, is_completed=False):
                             st.session_state[delete_key] = False
                             st.warning(f"Pesanan ID {booking_id} tidak jadi dihapus.")
 
+    # Sisipkan data biner ke gambar
+    for i in range(len(bin_data)):
+        flat_img[i] = (flat_img[i] & ~1) | int(bin_data[i])
+
+    # Rekonstruksi gambar
+    reshaped_img = flat_img.reshape(img_array.shape)
+    return Image.fromarray(reshaped_img.astype('uint8'))
+
 # Fungsi untuk membuat kartu member
 def generate_member_card(full_name, membership_type, booking_date, booking_time):
     # Template ukuran kartu
@@ -498,18 +500,13 @@ def download_card_as_image(card, filename="member_card.png"):
     """
     return button_html
 
-
-# Fungsi untuk menyembunyikan teks dalam gambar
 def hide_text_in_image(image, text):
     data = text + "###END###"  # Tanda akhir data
     bin_data = ''.join(format(ord(char), '08b') for char in data)
-    
-    # Convert image to numpy array
-    img_array = np.array(image)
-    flat_img = img_array.flatten()
 
-    if len(bin_data) > len(flat_img):
-        raise ValueError("Teks terlalu besar untuk disisipkan dalam gambar!")
+    # Convert image to numpy array
+    img_array = np.array(image, dtype=np.int32)  # Menggunakan tipe data yang lebih besar
+    flat_img = img_array.flatten()
 
     for i in range(len(bin_data)):
         flat_img[i] = (flat_img[i] & ~1) | int(bin_data[i])
@@ -517,20 +514,19 @@ def hide_text_in_image(image, text):
     reshaped_img = flat_img.reshape(img_array.shape)
     return Image.fromarray(reshaped_img.astype('uint8'))
 
-# Fungsi untuk mengambil teks tersembunyi dari gambar
 def retrieve_text_from_image(image):
     img_array = np.array(image).flatten()
-    bin_data = [str(pixel & 1) for pixel in img_array[:len(img_array)]]
+    bin_data = [str(pixel & 1) for pixel in img_array]
     byte_array = [''.join(bin_data[i:i+8]) for i in range(0, len(bin_data), 8)]
-    chars = [chr(int(byte, 2)) for byte in byte_array]
+    chars = [chr(int(byte, 2)) for byte in byte_array if int(byte, 2) < 256]
     text = ''.join(chars)
+
     end_marker = "###END###"
     if end_marker in text:
         return text[:text.index(end_marker)]
     return "Data tidak ditemukan."
 
 def rc4_crypt(data, key):
-    """Sederhana implementasi RC4 untuk enkripsi/dekripsi."""
     S = list(range(256))
     j = 0
     out = []
@@ -597,7 +593,6 @@ if st.session_state["login_status"] is None:  # Not logged in
         st.title("Selamat Datang di Secure App - Sistem Pemesanan Gym")
         st.image(
             "https://png.pngtree.com/background/20230516/original/pngtree-large-room-full-of-equipment-in-a-gym-picture-image_2611111.jpg",
-            use_column_width=True,
         )
         st.markdown("""
         **Pada aplikasi ini menyediakan layanan:**
@@ -713,11 +708,12 @@ else:  # Logged in
             completed_bookings = get_all_completed_bookings()
             if completed_bookings:
                 for completed_booking in completed_bookings:
-                    booking_id, username, full_name, booking_time, booking_date, encrypted_info = completed_booking
+                    booking_id, username, full_name, booking_time, booking_date, membership_type, encrypted_info = completed_booking
                     with st.expander(f"Pesanan #{booking_id} - {username} (Selesai)"):
                         st.write(f"**Nama Lengkap:** {full_name}")
                         st.write(f"**Waktu Pemesanan:** {booking_time}")
                         st.write(f"**Tanggal Pemesanan:** {booking_date}")
+                        st.write(f"**Jenis Keanggotaan:** {membership_type}")
             else:
                 st.warning("Belum ada riwayat pesanan.")
             
@@ -729,7 +725,7 @@ else:  # Logged in
                     st.error(result)
             
         elif admin_action == "Dekripsi Pesan Gambar Member":
-            st.subheader("Melihat pesan yang telah dikirim dengan Kartu Member")
+            st.subheader("Dekripsi Steganografi Pelanggan")
             uploaded_image = st.file_uploader("Upload Gambar Kartu Member dengan Pesan", type=["png", "jpg", "jpeg"])
             if st.button("Dekripsi Pesan"):
                 if uploaded_image:
@@ -740,7 +736,7 @@ else:  # Logged in
         elif admin_action == "Dekripsi File Pembayaran":
             st.subheader("Dekripsi File Pembayaran")
             
-            uploaded_file = st.file_uploader("Upload file terenkripsi", type=["bin", "enc", "txt", "pdf"])
+            uploaded_file = st.file_uploader("Upload file terenkripsi", type=["bin", "enc", "txt", "pdf", "docx"])
             rc4_key = st.text_input("Masukkan Kunci RC4 (3-4 Karakter)")
             
             if st.button("Dekripsi File"):
@@ -786,7 +782,6 @@ else:  # Logged in
         if customer_action == "Pemesanan Tempat Gym":
             st.image(
                 "https://e1.pxfuel.com/desktop-wallpaper/217/624/desktop-wallpaper-gym-muscular.jpg",
-                use_column_width=True,
             )
             st.subheader("Silahkan Lakukan Pemesanan Sesuai Kebutuhan")
 
@@ -828,7 +823,7 @@ else:  # Logged in
 
                     # Unduh Gambar
                     card = generate_member_card(full_name, membership_type, booking_date, booking_time)
-                    st.image(card, use_column_width=False)
+                    st.image(card)
 
                     # Buat file detail pemesanan
                     booking_file_name = f"{full_name.replace(' ', '_')}_Booking_Details.txt"
@@ -863,9 +858,11 @@ else:  # Logged in
                         mime="text/plain",
                         key="download_booking_details"
                     )
+
+                    
         
         elif customer_action == "Kirim Pesan Gambar Kartu Member":
-            st.write("Upload gambar kartu member:")
+            st.subheader("Pesan Dalam Gambar - Steganografi")
             uploaded_image = st.file_uploader("Upload Gambar Kartu Member", type=["png", "jpg", "jpeg"])
             secret_message = st.text_input("Masukkan Pesan Rahasia untuk Disisipkan")
             if st.button("Sisipkan Pesan dan Kirim"):
@@ -873,7 +870,7 @@ else:  # Logged in
                     image = Image.open(uploaded_image).convert("RGB")
                     encoded_image = hide_text_in_image(image, secret_message)
                     st.success("Pesan berhasil disisipkan ke dalam gambar.")
-                    st.image(encoded_image, use_column_width=False)
+                    st.image(encoded_image)
 
                     # Unduh gambar terenkripsi
                     buf = io.BytesIO()
