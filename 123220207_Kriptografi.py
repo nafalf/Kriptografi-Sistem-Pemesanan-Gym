@@ -95,23 +95,6 @@ def login_user(username, password):
     return user
 
 
-# Function to register a user
-def register_user(username, password):
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
-    conn.commit()
-    conn.close()
-
-# Function to check if user exists
-def login_user(username, password):
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
-    user = c.fetchone()
-    conn.close()
-    return user
-
 # Menyimpan User yang Berhasil Register
 def get_registered_users():
     conn = sqlite3.connect("users.db")
@@ -662,8 +645,8 @@ else:  # Logged in
         admin_action = st.sidebar.radio("Navigasi", ["Kelola Pengguna", "Dekripsi Pesan Gambar Member", "Dekripsi File Pembayaran", "Logout"])
         if admin_action == "Kelola Pengguna":
             users = get_registered_users()
+            st.subheader("Daftar Pengguna Terdaftar:")
             if users:
-                st.subheader("Daftar Pengguna Terdaftar:")
                 for idx, user in enumerate(users, start=1):
                     col1, col2 = st.columns([3, 1])
                     with col1:
@@ -862,7 +845,7 @@ else:  # Logged in
                     
         
         elif customer_action == "Kirim Pesan Gambar Kartu Member":
-            st.subheader("Pesan Dalam Gambar - Steganografi")
+            st.subheader("Steganografi - Pesan Dalam Gambar")
             uploaded_image = st.file_uploader("Upload Gambar Kartu Member", type=["png", "jpg", "jpeg"])
             secret_message = st.text_input("Masukkan Pesan Rahasia untuk Disisipkan")
             if st.button("Sisipkan Pesan dan Kirim"):
@@ -888,7 +871,7 @@ else:  # Logged in
                     st.error("Harap masukkan pesan!")
 
         if customer_action == "Kirim File Detail Pemesanan":
-            st.subheader("Enkripsi File Detail Pemesanan")
+            st.subheader("RC4 - Enkripsi File")
 
             uploaded_file = st.file_uploader("Pilih file untuk dienkripsi", type=["pdf", "txt", "docx", "jpg", "png"])
             rc4_key = st.text_input("Masukkan Kunci RC4 (3-4 Karakter)")
